@@ -10,6 +10,7 @@ class GeneralConfig:
         self.no_prompt = getattr(args, 'no_prompt', None)
         self.worker_count = getattr(args, 'worker_count', None)
         self.use_pydub_merge = getattr(args, 'use_pydub_merge', None)
+        self.is_ssml = getattr(args, 'ssml', False)
 
         # Book parser specific arguments
         self.title_mode = getattr(args, 'title_mode', None)

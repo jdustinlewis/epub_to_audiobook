@@ -82,6 +82,12 @@ def handle_args():
     )
 
     parser.add_argument(
+        "--ssml",
+        action="store_true",
+        help="Treat input file as SSML XML instead of EPUB. Only supported for Azure TTS."
+    )
+
+    parser.add_argument(
         "--search_and_replace_file",
         default="",
         help="""Path to a file that contains 1 regex replace per line, to help with fixing pronunciations, etc. The format is:

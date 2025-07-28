@@ -37,8 +37,14 @@ def get_supported_book_parsers() -> List[str]:
 
 
 def get_book_parser(config) -> BaseBookParser:
-    if config.input_file.endswith(EPUB):
-        from audiobook_generator.book_parsers.epub_book_parser import EpubBookParser
+    if config.is_ssml:
+        from audiobook_generator.book_parsers.ssml_book_parser import SSMLBookParser
+        return SSMLBookParser(config)
+    elif config.input_file.endswith(EPUB):
+        from audiobook_generator.book_parsers.epub_book_parser import (
+            EpubBookParser,
+        )
+
         return EpubBookParser(config)
     # elif <- new book parser goes here
     else:

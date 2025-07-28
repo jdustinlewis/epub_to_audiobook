@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 from time import sleep
 import requests
+import xml.etree.ElementTree as ET
 
 from audiobook_generator.core.audio_tags import AudioTags
 from audiobook_generator.config.general_config import GeneralConfig
@@ -94,60 +95,113 @@ class AzureTTSProvider(BaseTTSProvider):
         # Adjust this value based on your testing
         max_chars = 1800 if self.config.language.startswith("zh") else 3000
 
-        text_chunks = split_text(text, max_chars, self.config.language)
-
         audio_segments = []
         chunk_ids = []
-        for i, chunk in enumerate(text_chunks, 1):
-            chunk_id = f"chapter-{audio_tags.idx}_{audio_tags.title}_chunk_{i}_of_{len(text_chunks)}"
-            logger.info(
-                f"Processing {chunk_id}, length={len(chunk)}"
-            )
-            logger.debug(
-                f"Processing {chunk_id}, length={len(chunk)}, text=[{chunk}]"
-            )
-            escaped_text = html.escape(chunk)
-            logger.debug(f"Escaped text: [{escaped_text}]")
-            # replace MAGIC_BREAK_STRING with a break tag for section/paragraph break
-            escaped_text = escaped_text.replace(
-                self.get_break_string().strip(),
-                f" <break time='{self.config.break_duration}ms' /> ",
-            )  # strip in case leading bank is missing
-            ssml = f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{self.config.language}'><voice name='{self.config.voice_name}'>{escaped_text}</voice></speak>"
-            logger.debug(f"SSML: [{ssml}]")
 
-            for retry in range(MAX_RETRIES):
-                self.auto_renew_access_token()
-                headers = {
-                    "Authorization": f"Bearer {self.access_token}",
-                    "Content-Type": "application/ssml+xml",
-                    "X-Microsoft-OutputFormat": self.config.output_format,
-                    "User-Agent": "Python",
-                }
-                try:
-                    logger.info(
-                        "Sending request to Azure TTS, data length: " + str(len(ssml))
-                    )
-                    response = requests.post(
-                        self.TTS_URL, headers=headers, data=ssml.encode("utf-8")
-                    )
-                    response.raise_for_status()  # Will raise HTTPError for 4XX or 5XX status
-                    logger.info(
-                        "Got response from Azure TTS, response length: "
-                        + str(len(response.content))
-                    )
-                    audio_segments.append(io.BytesIO(response.content))
-                    chunk_ids.append(chunk_id)
-                    break
-                except requests.exceptions.RequestException as e:
-                    logger.warning(
-                        f"Error while converting text to speech (attempt {retry + 1}): {e}"
-                    )
-                    if retry < MAX_RETRIES - 1:
-                        logger.warning(f"Sleeping for {2 ** retry} seconds before retrying, you can also stop the program manually and check error logs.")
-                        sleep(2 ** retry)
-                    else:
-                        raise e
+        if text.strip().startswith('<speak>'):
+            # Handle as SSML
+            try:
+                tree = ET.fromstring(text)
+                for i, voice_elem in enumerate(tree.findall('.//voice'), 1):
+                    name = voice_elem.get('name')
+                    if name is None:
+                        logger.warning(f"Voice tag {i} without name attribute, skipping.")
+                        continue
+                    inner_xml = ''.join(ET.tostring(child, encoding='unicode', method='xml') for child in voice_elem)
+                    ssml = f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{self.config.language}'><voice name='{name}'>{inner_xml}</voice></speak>"
+                    chunk_id = f"chapter-{audio_tags.idx}_{audio_tags.title}_voice_{i}_of_{len(tree.findall('.//voice'))}"
+                    logger.info(f"Processing {chunk_id}, SSML length={len(ssml)}")
+                    logger.debug(f"SSML: [{ssml}]")
+
+                    for retry in range(MAX_RETRIES):
+                        self.auto_renew_access_token()
+                        headers = {
+                            "Authorization": f"Bearer {self.access_token}",
+                            "Content-Type": "application/ssml+xml",
+                            "X-Microsoft-OutputFormat": self.config.output_format,
+                            "User-Agent": "Python",
+                        }
+                        try:
+                            logger.info(
+                                "Sending request to Azure TTS, data length: " + str(len(ssml))
+                            )
+                            response = requests.post(
+                                self.TTS_URL, headers=headers, data=ssml.encode("utf-8")
+                            )
+                            response.raise_for_status()  # Will raise HTTPError for 4XX or 5XX status
+                            logger.info(
+                                "Got response from Azure TTS, response length: "
+                                + str(len(response.content))
+                            )
+                            audio_segments.append(io.BytesIO(response.content))
+                            chunk_ids.append(chunk_id)
+                            break
+                        except requests.exceptions.RequestException as e:
+                            logger.warning(
+                                f"Error while converting text to speech (attempt {retry + 1}): {e}"
+                            )
+                            if retry < MAX_RETRIES - 1:
+                                logger.warning(f"Sleeping for {2 ** retry} seconds before retrying, you can also stop the program manually and check error logs.")
+                                sleep(2 ** retry)
+                            else:
+                                raise e
+            except ET.ParseError as e:
+                logger.error(f"Failed to parse SSML: {e}")
+                raise
+        else:
+            # Handle as plain text
+            text_chunks = split_text(text, max_chars, self.config.language)
+
+            for i, chunk in enumerate(text_chunks, 1):
+                chunk_id = f"chapter-{audio_tags.idx}_{audio_tags.title}_chunk_{i}_of_{len(text_chunks)}"
+                logger.info(
+                    f"Processing {chunk_id}, length={len(chunk)}"
+                )
+                logger.debug(
+                    f"Processing {chunk_id}, length={len(chunk)}, text=[{chunk}]"
+                )
+                escaped_text = html.escape(chunk)
+                logger.debug(f"Escaped text: [{escaped_text}]")
+                # replace MAGIC_BREAK_STRING with a break tag for section/paragraph break
+                escaped_text = escaped_text.replace(
+                    self.get_break_string().strip(),
+                    f" <break time='{self.config.break_duration}ms' /> ",
+                )  # strip in case leading bank is missing
+                ssml = f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{self.config.language}'><voice name='{self.config.voice_name}'>{escaped_text}</voice></speak>"
+                logger.debug(f"SSML: [{ssml}]")
+
+                for retry in range(MAX_RETRIES):
+                    self.auto_renew_access_token()
+                    headers = {
+                        "Authorization": f"Bearer {self.access_token}",
+                        "Content-Type": "application/ssml+xml",
+                        "X-Microsoft-OutputFormat": self.config.output_format,
+                        "User-Agent": "Python",
+                    }
+                    try:
+                        logger.info(
+                            "Sending request to Azure TTS, data length: " + str(len(ssml))
+                        )
+                        response = requests.post(
+                            self.TTS_URL, headers=headers, data=ssml.encode("utf-8")
+                        )
+                        response.raise_for_status()  # Will raise HTTPError for 4XX or 5XX status
+                        logger.info(
+                            "Got response from Azure TTS, response length: "
+                            + str(len(response.content))
+                        )
+                        audio_segments.append(io.BytesIO(response.content))
+                        chunk_ids.append(chunk_id)
+                        break
+                    except requests.exceptions.RequestException as e:
+                        logger.warning(
+                            f"Error while converting text to speech (attempt {retry + 1}): {e}"
+                        )
+                        if retry < MAX_RETRIES - 1:
+                            logger.warning(f"Sleeping for {2 ** retry} seconds before retrying, you can also stop the program manually and check error logs.")
+                            sleep(2 ** retry)
+                        else:
+                            raise e
 
         # Use utility function to merge audio segments
         merge_audio_segments(audio_segments, output_file, self.get_output_file_extension(), chunk_ids, self.config.use_pydub_merge)

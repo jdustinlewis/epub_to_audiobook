@@ -75,6 +75,8 @@ class AudiobookGenerator:
         try:
             logger.info("Starting audiobook generation...")
             book_parser = get_book_parser(self.config)
+            if self.config.is_ssml and self.config.tts != "azure":
+                logger.warning("SSML input is only fully supported for Azure TTS provider. Other providers may not handle SSML correctly.")
             tts_provider = get_tts_provider(self.config)
 
             os.makedirs(self.config.output_folder, exist_ok=True)
