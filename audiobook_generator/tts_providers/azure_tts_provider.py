@@ -15,7 +15,7 @@ from audiobook_generator.tts_providers.base_tts_provider import BaseTTSProvider
 
 logger = logging.getLogger(__name__)
 
-MAX_RETRIES = 12  # Max_retries constant for network errors
+MAX_RETRIES = 3  # Max_retries constant for network errors
 
 
 class AzureTTSProvider(BaseTTSProvider):
@@ -97,6 +97,8 @@ class AzureTTSProvider(BaseTTSProvider):
 
         audio_segments = []
         chunk_ids = []
+        segments_dir = os.path.join(os.path.dirname(output_file), 'segments')
+        os.makedirs(segments_dir, exist_ok=True)
 
         if text.strip().startswith('<speak>'):
             # Handle as SSML
@@ -133,8 +135,15 @@ class AzureTTSProvider(BaseTTSProvider):
                                 "Got response from Azure TTS, response length: "
                                 + str(len(response.content))
                             )
-                            audio_segments.append(io.BytesIO(response.content))
+                            segment_data = io.BytesIO(response.content)
+                            audio_segments.append(segment_data)
                             chunk_ids.append(chunk_id)
+                            # Save individual segment
+                            segment_path = os.path.join(segments_dir, f"{chunk_id}.{self.get_output_file_extension()}")
+                            with open(segment_path, 'wb') as f:
+                                segment_data.seek(0)
+                                f.write(segment_data.read())
+                            segment_data.seek(0)  # Reset for merging
                             break
                         except requests.exceptions.RequestException as e:
                             logger.warning(
@@ -190,8 +199,15 @@ class AzureTTSProvider(BaseTTSProvider):
                             "Got response from Azure TTS, response length: "
                             + str(len(response.content))
                         )
-                        audio_segments.append(io.BytesIO(response.content))
+                        segment_data = io.BytesIO(response.content)
+                        audio_segments.append(segment_data)
                         chunk_ids.append(chunk_id)
+                        # Save individual segment
+                        segment_path = os.path.join(segments_dir, f"{chunk_id}.{self.get_output_file_extension()}")
+                        with open(segment_path, 'wb') as f:
+                            segment_data.seek(0)
+                            f.write(segment_data.read())
+                        segment_data.seek(0)  # Reset for merging
                         break
                     except requests.exceptions.RequestException as e:
                         logger.warning(

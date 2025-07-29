@@ -17,7 +17,7 @@ from audiobook_generator.tts_providers.piper_tts_provider import get_piper_suppo
 from audiobook_generator.utils.log_handler import generate_unique_log_path
 from main import main
 
-selected_tts = "Edge"
+selected_tts = "Azure"
 running_process: Optional[Process] = None
 webui_log_file = None
 
@@ -177,7 +177,7 @@ def host_ui(config):
 
 
         gr.Markdown("---")
-        with gr.Tabs(selected="edge_tab_id"):
+        with gr.Tabs(selected="azure_tab_id"):
             with gr.Tab("OpenAI", id="openai_tab_id") as open_ai_tab:
                 gr.Markdown("It is expected that user configured: `OPENAI_API_KEY` in the environment variables. Optionally `OPENAI_API_BASE` can be set to overwrite OpenAI API endpoint.")
                 with gr.Row(equal_height=True):
